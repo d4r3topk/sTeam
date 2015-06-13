@@ -42,6 +42,7 @@ function edit_now(int argc,array(string) argv)
 
 void import_from_git(string from, string to)
 {
+    int a=0;
 //    object p = ((program)"edit.pike")();
     write("inside import-from-git function\n");
     int i;
@@ -55,7 +56,11 @@ void import_from_git(string from, string to)
 //       for(i=(num_versions); i>=1; i--)
 //       {
 //        string content = git_version_content(from,(string)i);
-       int a = handle_normal(from, to, 1, steam_history, num_versions);
+       if(options->append)
+        a = handle_append(from, to, steam_history, num_versions);
+       else
+        a = handle_normal(from, to, 1, steam_history, num_versions);
+       
         if(a)
         {
           write("Succesfully imported\n");
@@ -68,7 +73,6 @@ void import_from_git(string from, string to)
 //       }
     }
 }
-
 
 
 array get_steam_versions(object obj)
@@ -243,6 +247,25 @@ string git_version_content(string path, string ver, int total)
     write("version "+ver+" content is "+result+"\n"); 
     return result;
 }
+int handle_append(string from, string to, array steam_history, int num_git_versions)
+{
+    write("inside handle append\n");
+    string scontent = steam_history[strlen(steam_history)-1]->obj->get_content();
+    string gcontent = git_version_content(from,(string)1,num_git_versions);
+    write("scontent : "+scontent+"\n");
+    write("gcontent : "+gcontent+"\n");
+    if(scontent==gcontent)
+    {
+     int i=0;
+     for(i=2;i<=num_git_versions;i++)
+     {
+      string content = git_version_content(from,(string)i, num_git_versions);
+      OBJ(to)->set_content(content);
+     }
+     return 1;
+    }
+    return 0;
+}
 
 int handle_normal(string from, string to, int num, array steam_history, int num_git_versions)
 {
@@ -253,7 +276,7 @@ int handle_normal(string from, string to, int num, array steam_history, int num_
   string scontent = steam_history[num-1]->obj->get_content();
   write("STEAM HISTORY IS : %O\n and number is %d",steam_history,num-1);
 //  write("getting git content now \n");
-  string gcontent = git_version_content(from,(string)(num),num_git_versions);
+  string gcontent = git_version_content(from,(string)num,num_git_versions);
 
 
   if((num>strlen(steam_history))||((num==1)&&!scontent))   //after successful history, add it to steam. (second condition for object in sTeam with no versions).
