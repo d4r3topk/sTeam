@@ -42,10 +42,14 @@ private static mixed          miResult;
 private static int           miCommand;
 
 static Thread.Mutex    cmd_mutex =     Thread.Mutex();
+static Thread.Mutex    newmut =     Thread.Mutex();
 static Thread.Condition cmd_cond = Thread.Condition();
 static Thread.Queue      resultQueue = Thread.Queue();
+Thread.MutexKey key ;
+static Thread.MutexKey newmutkey;
+static Thread.Condition    th = Thread.Condition();
 static object                                cmd_lock;
-
+static Stdio.File sock = Stdio.File();
 string connected_server;
 int connected_port;
 
@@ -219,6 +223,7 @@ int connect_server(string server, int port)
 	MESSAGE("Connected to " + server + ":"+port +"\n");
 	connected_server=server;
 	connected_port=port;
+//  SSL.sslfile ssl = SSL.sslfile(socket, SSL.context());
 	__last_response = time(); // timestamp of last response	
 	__connected = 1;
 	set_buffer(65536, "r");
@@ -226,6 +231,28 @@ int connect_server(string server, int port)
 	set_blocking();
 	thread_create(read_thread);
 	return 1;
+    }
+    return 0;
+}
+
+int connect_server_sock(string server, int port)
+{
+    iTID = 1;
+    iOID = 0;
+
+    sLastPacket     = "";
+    __downloadBytes =  0;
+    mVariables      = ([ ]);
+    mObjects        = ([ ]);
+    aEvents         = ({ });
+    
+    if ( socket_connect(server, port) ) {
+  MESSAGE("Connected to " + server + ":"+port +"\n");
+  connected_server=server;
+  connected_port=port;
+  __last_response = time(); // timestamp of last response 
+  __connected = 1;
+  return 1;
     }
     return 0;
 }
@@ -249,11 +276,17 @@ static int write(string str)
  * @author <a href="mailto:astra@upb.de">Thomas Bopp</a>) 
  * @see 
  */
+int h=0;
 void read_callback(object id, string data)
 {
+    i++;
+    Stdio.File a = Stdio.File();
+    a->open("/home/trilok/Desktop/my_gsoc_work/new/sTeam/spm/read_callback","wca");
     __last_response = time();
-    
+    a->write("----------------"+i+"-------------------\n");
+    a->write("data is : "+data+"\n");
     if ( functionp(downloadStore) ) {
+  a->write("downloadStore is a function\n");
 	mixed err = catch {
 	    downloadStore(data);
 	};
@@ -266,12 +299,16 @@ void read_callback(object id, string data)
     }
     sLastPacket += data;
     if ( __downloadBytes > 0 ) {
-	if ( __downloadBytes <= strlen(sLastPacket) )
+	if ( __downloadBytes <= strlen(sLastPacket) ){
+      a->write(sLastPacket+" last packet written in resultQueue\n");
 	    resultQueue->write(sLastPacket);
+      a->write(sLastPacket);
+      }
 	return;
     }
-
+//    a->write("slastpacket is  "+sLastPacket+"\n");
     mixed res = receive_binary(sLastPacket);
+//    a->write("res is %O\n",res);
     if ( arrayp(res) ) {
 	int tid = res[0][0];
 	int cmd = res[0][1];
@@ -280,6 +317,9 @@ void read_callback(object id, string data)
 	if ( tid == iWaitTID ) {
 	    miResult = res[1];
 	    miCommand = res[0][1];
+//      a->write("%O : written in resultQueue\n",miResult);
+//      miResult = res[1];
+      a->write("written now");
 	    resultQueue->write(miResult);
 	}
     }
@@ -292,8 +332,10 @@ string download(int bytes, void|function store)
     // which should have been already processed
     // everything else should be download data
     string data;
+    Stdio.File a = Stdio.File();
+    a->open("/home/trilok/Desktop/my_gsoc_work/new/sTeam/spm/download","wca");
     __downloadBytes = bytes;
-
+    a->write("inside here\n");
     if ( functionp(store) ) {
 	data = copy_value(sLastPacket[..bytes]);
 	__downloadBytes -= strlen(data);
@@ -303,6 +345,7 @@ string download(int bytes, void|function store)
 	    store(0);
 	    return "";
 	}
+  a->write("downloadStore is now = store\n");
 	downloadStore = store;
 	return "";
     }
@@ -319,6 +362,7 @@ string download(int bytes, void|function store)
     }
 
     miResult = resultQueue->read();
+    a->write(miResult+" read from resultQueue\n");
     data = copy_value(sLastPacket[..bytes]);
     if ( strlen(sLastPacket) > bytes )
 	sLastPacket = sLastPacket[bytes+1..];
@@ -340,7 +384,7 @@ void handle_error(mixed err)
 {
     throw(err);
 }
-
+int co = 0;
 /**
  *
  *  
@@ -351,22 +395,71 @@ void handle_error(mixed err)
  */
 mixed send_command(int cmd, array(mixed) args, int|void no_wait)
 {
+//    newmutkey = newmut->lock(1);
+    co++;
+    Stdio.File o = Stdio.File();
+    o->open("/home/trilok/Desktop/my_gsoc_work/new/sTeam/spm/random","wca");
+//    o->write("inside send_command\n");
+    o->write("----------------------- "+co+"-----------------------\n");
+    //o->close();
     if ( !no_wait ) iWaitTID = iTID;
     aEvents  = ({ });
     
     string msg = coal_compose(iTID++, cmd, iOID, 0, args);
     string nmsg = copy_value(msg);
-
+//    o->write("sending message now\n");
+    o->write("nmsg is : "+nmsg+"\n");
     send_message(nmsg);
+//    o->write("sent message\n");
     if ( no_wait ) return 0;
+//    o->write("Reading  result\n");
+//    o->write("size : "+resultQueue->size()+"\n");
+//    sock->connect("127.0.0.1",1999);
+//    string strs = sock->read();
+//    o->write(strs);
+    mixed result=0;
+/*    if(cmd==14)
+    {
+      result = resultQueue->try_read();
+      return result;
+    } */
+//    int start_time = time();
+//    while((result=resultQueue->try_read())==0)
+//    { 
+//      if(time()-start_time > 120)
+//     {
+//        o->write("EXCEEDED TIME LIMIT\n");
+//        return 0;
+//      }
+  //   }
     
-    mixed result = resultQueue->read();
+    Thread.Thread(check_thread); 
+    result = resultQueue->read();
+    th->signal();
+    newmutkey = 0;
+//    mixed result = 0;
+    o->write("result is : %O\n",result);
     if ( miCommand == COAL_ERROR ) {
 	handle_error(result);
     }
     return result;
 }
 
+static Stdio.File out = Stdio.File();
+//out->open("/home/trilok/Desktop/my_gsoc_work/new/sTeam/spm/thread","wca");
+void check_thread()
+{
+//    out->write("inside check_thread at "+time()+"\n");
+    out->open("/home/trilok/Desktop/my_gsoc_work/new/sTeam/spm/thread","wca");
+    out->write("inside check_thread at "+time()+"\n");
+    int start_time = time();
+    th->wait(cmd_mutex->lock(), 10);
+    if((time()-start_time) >=10){
+      out->write("\nsTeam connection lost\n");
+      resultQueue->write("sTeam connection lost.");
+      out->write("size : "+resultQueue->size());
+    }
+}
 /**
  *
  *  
@@ -399,16 +492,24 @@ mixed send_cmd(object|int obj, string func, mixed|void args, void|int no_wait)
 mixed 
 login(string name, string pw, int features, string|void cname, int|void novars)
 {
+    Stdio.File a = Stdio.File();
+    a->open("/home/trilok/Desktop/my_gsoc_work/new/sTeam/spm/login_d","wca");
     if ( !stringp(cname) )
 	cname = "steam-pike";
     
-    mixed loginData;
+    mixed loginData="hi";
+    mixed tempData;
+    a->write("before while\n");
+  while(loginData=="sTeam connection lost."||loginData=="hi")
+  { a->write("inside while\n"); 
     if ( features != 0 )
 	loginData =send_command(COAL_LOGIN, ({ name, pw, cname, features, __id }));
     else
 	loginData =
 	    send_command(COAL_LOGIN,({ name, pw, cname,CLIENT_FEATURES_ALL, __id}));
-    
+    tempData = loginData;
+    a->write("logindata : %O",tempData);
+  }
     if ( arrayp(loginData) && sizeof(loginData) >= 9 ) {
 	mVariables["user"] = iOID;
 	foreach ( indices(loginData[8]), string key ) {
@@ -422,8 +523,10 @@ login(string name, string pw, int features, string|void cname, int|void novars)
 		mVariables[send_cmd(cl,"get_identifier")] = cl;
 	    }
 	}
+  a->write("returning name\n");
 	return name;
     }
+    a->write("returning 0\n");
     return 0;
 }
 
