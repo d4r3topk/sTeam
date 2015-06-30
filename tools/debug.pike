@@ -9,7 +9,7 @@
  *  (at your option) any later version.
  *
  *  This program is distributed in the hope that it will be useful,
- *  but WITHOUT ANY WARRANTY; without even the implied warranty of
+u*  but WITHOUT ANY WARRANTY; without even the implied warranty of
  *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  *  GNU General Public License for more details.
  *
@@ -21,47 +21,172 @@
  */
 
 constant cvs_version="$Id: debug.pike.in,v 1.1 2008/03/31 13:39:57 exodusd Exp $";
-
-inherit "/usr/local/lib/steam/tools/applauncher.pike";
+inherit Tools.Hilfe.Evaluator;
+inherit "/home/trilok/Desktop/my_gsoc_work/new/sTeam/tools/applauncher.pike";
 
 Stdio.Readline readln;
+mapping options;
+string pw;
+string str;
+int c=1;
 
 class Handler
 {
   inherit Tools.Hilfe.Evaluator;
   inherit Tools.Hilfe;
 
+  object p;
   void create(mapping _constants)
   {
-    object p = ((program)"tab_completion.pmod")();
+    readln = Stdio.Readline();
+    p = ((program)"tab_completion.pmod")();
+    reset_evaluator();
     readln = p->readln;
+//    add_input_line("stop backend");
     write=predef::write;
-    ::create();
+//    if(c==1)
+     ::create();
+//    c++;
     p->load_hilferc();
     p->constants+=_constants;  //For listing sTeam commands and objects on tab
     constants = p->constants;  //For running those commands
+
     readln->get_input_controller()->bind("\t",p->handle_completions);
   }
 }
 
-void ping()
-{
-  call_out(ping, 60);
-  conn->send_command(14, 0); 
-}
+object handler,conn,_Server,users;
+int flag = 1;
+mapping all;
+Stdio.Readline.History readline_history;
 
-object handler, conn;
+mixed ping()
+{
+  write("constants are %O ",Tools.Hilfe.Evaluator()->constants);
+  //write("inside ping\n");
+//  write("before ping : conn is %O\n",conn);
+  call_out(ping, 30);
+  mixed a = conn->send_command(14, 0);
+   
+//  write("after ping \n");
+//  write("a : %O\n",a);
+  if(a=="sTeam connection lost.")
+  {
+//      handler->add_input_line("stop backend");
+      conn = ((program)"client_base.pike")();
+      conn->close();
+      write("trying to reconnect to "+options->host+":"+options->port+"\n");
+      flag=0;
+      if(conn->connect_server(options->host, options->port))
+      {
+          write("Connected. Logging you in now and removing callout\n");
+          remove_call_out(ping);
+          //write("calling ping \n");
+          ping(); 
+          if(str=conn->login(options->user, pw, 1))
+          {
+          write("successfully logged in with "+str+"\n");
+	        //  run(0);
+          _Server=conn->SteamObj(0);
+          users=_Server->get_module("users");
+          all = assign(conn,_Server,users);
+          write("try now\n");
+          }
+      }
+  }
+  return a;
+}
+//SSL.sslfile ssl;
 
 int main(int argc, array(string) argv)
 {
-  mapping options=init(argv);
-  object _Server=conn->SteamObj(0);
-  //write("%O\n", options);
-  //Tools.Hilfe.StdinHilfe();
 
-  object users=_Server->get_module("users");
+   options=init(argv);
+	run(1);
+}
 
-  handler = Handler(([
+mapping init(array argv)
+{
+  mapping options = ([ "file":"/etc/shadow" ]);
+
+  array opt=Getopt.find_all_options(argv,aggregate(
+    ({"file",Getopt.HAS_ARG,({"-f","--file"})}),
+    ({"host",Getopt.HAS_ARG,({"-h","--host"})}),
+    ({"user",Getopt.HAS_ARG,({"-u","--user"})}),
+    ({"port",Getopt.HAS_ARG,({"-p","--port"})}),
+    ));
+
+  options->historyfile=getenv("HOME")+"/.steam_history";
+
+  foreach(opt, array option)
+  {
+    options[option[0]]=option[1];
+  }
+  if(!options->host)
+    options->host="127.0.0.1";
+  if(!options->user)
+    options->user="root";
+  if(!options->port)
+    options->port=1900;
+  else
+    options->port=(int)options->port;
+
+  string server_path = "/home/trilok/Desktop/my_gsoc_work/new/sTeam";
+
+  master()->add_include_path(server_path+"/server/include");
+  master()->add_program_path(server_path+"/server/");
+  master()->add_program_path(server_path+"/conf/");
+  master()->add_program_path(server_path+"/spm/");
+  master()->add_program_path(server_path+"/server/net/coal/");
+
+  conn = ((program)"client_base.pike")();
+  write("conn is %O\n",typeof(conn));
+//  SSL.sslfile ssl = SSL.sslfile(conn, SSL.context());
+
+  int start_time = time();
+
+  werror("Connecting to sTeam server...\n");
+  while ( !conn->connect_server(options->host, options->port)  ) 
+  {
+//    write("came in \n");
+    if ( time() - start_time > 120 ) 
+    {
+      throw (({" Couldn't connect to server. Please check steam.log for details! \n", backtrace()}));
+    }
+    werror("Failed to connect... still trying ... (server running ?)\n");
+    sleep(10);
+  }
+  //write("pinging now\n"); 
+  ping();
+/*  while(ping()==0)
+  {
+    write("ping still 0\n");
+  }*/
+  if(lower_case(options->user) == "guest")
+    return options;
+
+  mixed err;
+  int tries=3;
+  //readln->set_echo( 0 );
+  do
+  {
+    pw = Input.read_password( sprintf("Password for %s@%s", options->user,
+           options->host), "steam" );
+    //pw=readln->read(sprintf("passwd for %s@%s: ", options->user, options->host));
+  }
+  while((err = catch(conn->login(options->user, pw, 1))) && --tries);
+  //readln->set_echo( 1 );
+
+  if ( err != 0 ) 
+  {
+    werror("Failed to log in!\nWrong Password!\n");
+    exit(1);
+  } 
+  return options;
+}
+mapping assign(object conn, object _Server, object users)
+{
+	mapping all  = ([
     "_Server"     : _Server,
     "get_module"  : _Server->get_module,
     "get_factory" : _Server->get_factory,
@@ -486,105 +611,10 @@ int main(int argc, array(string) argv)
     "XML_DETAILS" :     (1<<16),
     "XML_ALWAYS" : ((1<<8)|(1<<9)|(1<<10)|(1<<11)|(1<<12)|(1<<16)),
 
-    ]));
+    ]);
 
-  array history=(Stdio.read_file(options->historyfile)||"")/"\n";
-  if(history[-1]!="")
-    history+=({""});
-
-  Stdio.Readline.History readline_history=Stdio.Readline.History(512, history);
-
-  readln->enable_history(readline_history);
-
-  handler->add_input_line("start backend");
-
-  string command;
-  while(command=readln->read(
-           sprintf("%s", (handler->state->finishedp()?"> ":">> "))))
-  {
-    if(sizeof(command))
-    {
-      Stdio.write_file(options->historyfile, readln->get_history()->encode());
-      handler->add_input_line(command);
-    }
-  }
-  handler->add_input_line("exit");
+  return all;
 }
-
-mapping init(array argv)
-{
-  mapping options = ([ "file":"/etc/shadow" ]);
-
-  array opt=Getopt.find_all_options(argv,aggregate(
-    ({"file",Getopt.HAS_ARG,({"-f","--file"})}),
-    ({"host",Getopt.HAS_ARG,({"-h","--host"})}),
-    ({"user",Getopt.HAS_ARG,({"-u","--user"})}),
-    ({"port",Getopt.HAS_ARG,({"-p","--port"})}),
-    ));
-
-  options->historyfile=getenv("HOME")+"/.steam_history";
-
-  foreach(opt, array option)
-  {
-    options[option[0]]=option[1];
-  }
-  if(!options->host)
-    options->host="127.0.0.1";
-  if(!options->user)
-    options->user="root";
-  if(!options->port)
-    options->port=1900;
-  else
-    options->port=(int)options->port;
-
-  string server_path = "/usr/local/lib/steam";
-
-  master()->add_include_path(server_path+"/server/include");
-  master()->add_program_path(server_path+"/server/");
-  master()->add_program_path(server_path+"/conf/");
-  master()->add_program_path(server_path+"/spm/");
-  master()->add_program_path(server_path+"/server/net/coal/");
-
-  conn = ((program)"client_base.pike")();
-
-  int start_time = time();
-
-  werror("Connecting to sTeam server...\n");
-  while ( !conn->connect_server(options->host, options->port)  ) 
-  {
-    if ( time() - start_time > 120 ) 
-    {
-      throw (({" Couldn't connect to server. Please check steam.log for details! \n", backtrace()}));
-    }
-    werror("Failed to connect... still trying ... (server running ?)\n");
-    sleep(10);
-  }
- 
-  ping();
-  if(lower_case(options->user) == "guest")
-    return options;
-
-  mixed err;
-  string pw;
-  int tries=3;
-  //readln->set_echo( 0 );
-  do
-  {
-    pw = Input.read_password( sprintf("Password for %s@%s", options->user,
-           options->host), "steam" );
-    //pw=readln->read(sprintf("passwd for %s@%s: ", options->user, options->host));
-  }
-  while((err = catch(conn->login(options->user, pw, 1))) && --tries);
-  //readln->set_echo( 1 );
-
-  if ( err != 0 ) 
-  {
-    werror("Failed to log in!\nWrong Password!\n");
-    exit(1);
-  } 
-  return options;
-}
-
 // create new sTeam objects
 // with code taken from the web script create.pike
 mixed create_object(string|void objectclass, string|void name, void|string desc, void|mapping data)
@@ -601,7 +631,8 @@ mixed create_object(string|void objectclass, string|void name, void|string desc,
   if ( !stringp(objectclass))
     return "No object type submitted";
 
-  factory = _Server->get_factory(objectclass);
+  factory = _Server->get_factory(16);
+  //write("Factory : %O\n",factory);
 
   switch(objectclass)
   {
@@ -618,7 +649,7 @@ mixed create_object(string|void objectclass, string|void name, void|string desc,
   if(!data)
     data=([]);
   created = factory->execute(([ "name":name ])+ data );
-
+//write("Created : %O\n",created);
   if(stringp(desc))
     created->set_attribute("OBJ_DESC", desc);
 
@@ -633,5 +664,43 @@ mixed create_object(string|void objectclass, string|void name, void|string desc,
 //  created->move(this_user());
 
   return created;
+}
+
+void run(int first){
+//if(first!=3){
+  _Server=conn->SteamObj(0);
+  users=_Server->get_module("users");
+
+   all = assign(conn,_Server,users);
+  handler = Handler(all);
+  array history=(Stdio.read_file(options->historyfile)||"")/"\n";
+  if(history[-1]!="")
+    history+=({""});
+
+  readline_history=Stdio.Readline.History(512, history);
+
+  readln->enable_history(readline_history); 
+  if(first==1)
+    handler->add_input_line("start backend once");
+//}
+  string command;
+if(first==1){
+  while((command=readln->read(
+           sprintf("%s", (handler->state->finishedp()?"> ":">> ")))))
+  {
+    //write("command : "+command+" size : "+sizeof(command)+"\n");
+    //if(first==2)
+       // break;
+    if(sizeof(command))
+    {
+      Stdio.write_file(options->historyfile, readln->get_history()->encode());
+      handler->add_input_line(command);
+      continue;
+    }
+    else{ continue; }
+  }
+  //run(3);
+  //write("flag is "+(string)flag+" so quitting\n");
+  handler->add_input_line("exit");}
 }
 
