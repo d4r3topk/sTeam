@@ -21,11 +21,12 @@ u*  but WITHOUT ANY WARRANTY; without even the implied warranty of
  */
 
 constant cvs_version="$Id: debug.pike.in,v 1.1 2008/03/31 13:39:57 exodusd Exp $";
-inherit Tools.Hilfe.Evaluator;
+//inherit Tools.Hilfe.Evaluator;
 inherit "/home/trilok/Desktop/my_gsoc_work/new/sTeam/tools/applauncher.pike";
 
 Stdio.Readline readln;
 mapping options;
+int flag=1;
 string pw;
 string str;
 int c=1;
@@ -40,7 +41,7 @@ class Handler
   {
     readln = Stdio.Readline();
     p = ((program)"tab_completion.pmod")();
-    reset_evaluator();
+//    reset_evaluator();
     readln = p->readln;
 //    add_input_line("stop backend");
     write=predef::write;
@@ -53,44 +54,92 @@ class Handler
 
     readln->get_input_controller()->bind("\t",p->handle_completions);
   }
+
+  void add_constants(mapping a)
+  {
+      constants = constants + a;
+  }
 }
 
 object handler,conn,_Server,users;
-int flag = 1;
 mapping all;
 Stdio.Readline.History readline_history;
 
 mixed ping()
 {
-  write("constants are %O ",Tools.Hilfe.Evaluator()->constants);
   //write("inside ping\n");
 //  write("before ping : conn is %O\n",conn);
-  call_out(ping, 30);
+  call_out(ping, 10);
+  //write("conn before sending ping : %O\n",conn);
   mixed a = conn->send_command(14, 0);
-   
+  
 //  write("after ping \n");
 //  write("a : %O\n",a);
   if(a=="sTeam connection lost.")
   {
+
 //      handler->add_input_line("stop backend");
-      conn = ((program)"client_base.pike")();
+    conn = ((program)"client_base.pike")();
       conn->close();
-      write("trying to reconnect to "+options->host+":"+options->port+"\n");
+//      write("conn is %O for reconnecting\n",conn);
+      //write("trying to reconnect\n");
       flag=0;
       if(conn->connect_server(options->host, options->port))
       {
-          write("Connected. Logging you in now and removing callout\n");
+          //write("Connected. Logging you in now and removing callout\n");
+          //conn = conn;
           remove_call_out(ping);
           //write("calling ping \n");
-          ping(); 
+          ping();
+          //write("came here\n");
           if(str=conn->login(options->user, pw, 1))
           {
-          write("successfully logged in with "+str+"\n");
+          //write("successfully logged in with "+str+"\n");
 	        //  run(0);
           _Server=conn->SteamObj(0);
           users=_Server->get_module("users");
-          all = assign(conn,_Server,users);
-          write("try now\n");
+          handler->add_constants(([     "_Server"     : _Server,
+    "get_module"  : _Server->get_module,
+    "get_factory" : _Server->get_factory,
+    "conn"        : conn,
+    "find_object" : conn->find_object,
+    "users"       : users,
+    "groups"      : _Server->get_module("groups"),
+    "me"          : users->lookup(options->user),
+    "edit"        : applaunch,
+    "create"      : create_object,
+    
+    // from database.h :
+    "_SECURITY" : _Server->get_module("security"),
+    "_FILEPATH" : _Server->get_module("filepath:tree"),
+    "_TYPES" : _Server->get_module("types"),
+    "_LOG" : _Server->get_module("log"),
+    "OBJ" : _Server->get_module("filepath:tree")->path_to_object,
+    "MODULE_USERS" : _Server->get_module("users"),
+    "MODULE_GROUPS" : _Server->get_module("groups"),
+    "MODULE_OBJECTS" : _Server->get_module("objects"),
+    "MODULE_SMTP" : _Server->get_module("smtp"),
+    "MODULE_URL" : _Server->get_module("url"),
+    "MODULE_ICONS" : _Server->get_module("icons"),
+    "SECURITY_CACHE" : _Server->get_module("Security:cache"),
+    "MODULE_SERVICE" : _Server->get_module("ServiceManager"),
+    "MOD" : _Server->get_module,
+    "USER" : _Server->get_module("users")->lookup,
+    "GROUP" : _Server->get_module("groups")->lookup,
+    "_ROOTROOM" : _Server->get_module("filepath:tree")->path_to_object("/"),
+    "_STEAMUSER" : _Server->get_module("users")->lookup("steam"),
+    "_ROOT" : _Server->get_module("users")->lookup("root"),
+    "_GUEST" : _Server->get_module("users")->lookup("guest"),
+    "_ADMIN" : _Server->get_module("users")->lookup("admin"),
+    "_WORLDUSER" : _Server->get_module("users")->lookup("everyone"),
+    "_AUTHORS" : _Server->get_module("users")->lookup("authors"),
+    "_REVIEWER" : _Server->get_module("users")->lookup("reviewer"),
+    "_BUILDER" : _Server->get_module("users")->lookup("builder"),
+    "_CODER" : _Server->get_module("users")->lookup("coder"),
+                                ]));
+//          all = assign(conn,_Server,users);
+          //write("try now\n");
+          flag=1;
           }
       }
   }
@@ -140,7 +189,7 @@ mapping init(array argv)
   master()->add_program_path(server_path+"/server/net/coal/");
 
   conn = ((program)"client_base.pike")();
-  write("conn is %O\n",typeof(conn));
+//  write("conn is %O\n",typeof(conn));
 //  SSL.sslfile ssl = SSL.sslfile(conn, SSL.context());
 
   int start_time = time();
@@ -156,6 +205,7 @@ mapping init(array argv)
     werror("Failed to connect... still trying ... (server running ?)\n");
     sleep(10);
   }
+
   //write("pinging now\n"); 
   ping();
 /*  while(ping()==0)
@@ -666,6 +716,18 @@ mixed create_object(string|void objectclass, string|void name, void|string desc,
   return created;
 }
 
+string getstring(int i)
+{
+  write("conn flag "+(string)conn->get_flag()+"\n");
+  if(i==1&&flag==1)
+      return "> ";
+  else if(i==1&&(flag==0||conn->get_flag()==0))
+      return "~ ";
+  else if(i==2&&flag==1)
+      return ">> ";
+  else if(i==2&&(flag==0||conn->get_flag()==0))
+      return "~~ ";
+}
 void run(int first){
 //if(first!=3){
   _Server=conn->SteamObj(0);
@@ -676,7 +738,7 @@ void run(int first){
   array history=(Stdio.read_file(options->historyfile)||"")/"\n";
   if(history[-1]!="")
     history+=({""});
-
+//  write("constants are %O\n",handler()->constants);
   readline_history=Stdio.Readline.History(512, history);
 
   readln->enable_history(readline_history); 
@@ -686,7 +748,7 @@ void run(int first){
   string command;
 if(first==1){
   while((command=readln->read(
-           sprintf("%s", (handler->state->finishedp()?"> ":">> ")))))
+           sprintf("%s", (handler->state->finishedp()?getstring(1):getstring(2))))))
   {
     //write("command : "+command+" size : "+sizeof(command)+"\n");
     //if(first==2)

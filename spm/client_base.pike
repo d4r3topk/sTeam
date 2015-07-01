@@ -40,7 +40,7 @@ private static int            iWaitTID;
 
 private static mixed          miResult;
 private static int           miCommand;
-
+int            flag=1;
 static Thread.Mutex    cmd_mutex =     Thread.Mutex();
 static Thread.Mutex    newmut =     Thread.Mutex();
 static Thread.Condition cmd_cond = Thread.Condition();
@@ -53,6 +53,10 @@ static Stdio.File sock = Stdio.File();
 string connected_server;
 int connected_port;
 
+int get_flag()
+{
+  return flag;
+}
 class SteamObj 
 {
   private static int oID; 
@@ -395,7 +399,7 @@ int co = 0;
  */
 mixed send_command(int cmd, array(mixed) args, int|void no_wait)
 {
-//    newmutkey = newmut->lock(1);
+    newmutkey = newmut->lock(1);
     co++;
     Stdio.File o = Stdio.File();
     o->open("/home/trilok/Desktop/my_gsoc_work/new/sTeam/spm/random","wca");
@@ -439,6 +443,8 @@ mixed send_command(int cmd, array(mixed) args, int|void no_wait)
     newmutkey = 0;
 //    mixed result = 0;
     o->write("result is : %O\n",result);
+//    if(result=="sTeam connection lost.")
+//        connect_server("127.0.0.1",1900);
     if ( miCommand == COAL_ERROR ) {
 	handle_error(result);
     }
@@ -450,15 +456,18 @@ static Stdio.File out = Stdio.File();
 void check_thread()
 {
 //    out->write("inside check_thread at "+time()+"\n");
-    out->open("/home/trilok/Desktop/my_gsoc_work/new/sTeam/spm/thread","wca");
-    out->write("inside check_thread at "+time()+"\n");
+//    out->open("/home/trilok/Desktop/my_gsoc_work/new/sTeam/spm/thread","wca");
+//    out->write("inside check_thread at "+time()+"\n");
     int start_time = time();
     th->wait(cmd_mutex->lock(), 10);
     if((time()-start_time) >=10){
-      out->write("\nsTeam connection lost\n");
+//      out->write("\nsTeam connection lost\n");
       resultQueue->write("sTeam connection lost.");
-      out->write("size : "+resultQueue->size());
+      flag=0;
+//      out->write("size : "+resultQueue->size());
     }
+    else
+        flag=1;
 }
 /**
  *
