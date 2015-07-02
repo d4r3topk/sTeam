@@ -22,35 +22,63 @@
 
 constant cvs_version="$Id: edit.pike.in,v 1.0 2010/09/15 14:19:52 martin Exp $";
 
-inherit "/usr/local/lib/steam/tools/applauncher.pike";
+//inherit "/usr/local/lib/steam/tools/applauncher.pike";
 //inherit "/usr/local/lib/steam/server/modules/groups.pike";
+inherit "/home/trilok/Desktop/my_gsoc_work/new/sTeam/tools/applauncher.pike";
+Stdio.File o = Stdio.File();
+//o->open("/home/trilok/my_gsoc_work/new/sTeam/spm/from_edit","wca");
 void ping(string host, string port, string user, string|void pw)
 {
-  call_out(ping, 60, host, port, user, pw);
+  o->open("/home/trilok/Desktop/my_gsoc_work/new/sTeam/spm/from_edit","wca");
+  o->write("came in pping\n");
+  call_out(ping, 10, host, port, user, pw);
   if (conn->is_closed())
   {
+      o->write("trying to reconnect\n");
+      conn = ((program)"client_base.pike")(); 
+      conn->close();
       if (conn->connect_server(host, port) && user != "guest")
+      {
+        o->write("connected, trying to ping\n");
+        if(conn->send_command(14,0)!="sTeam connection lost."){
+          o->write("pinged, trying to login\n");
           conn->login(user, pw, 1);
+          o->write("logged in, connected\n");
+          _Server=conn->SteamObj(0);
+          user_obj = _Server->get_module("users")->lookup(options->user); 
+          gp = user_obj->get_groups();
+	  get_file_object();
+    update(file1);
+//    write("file1 is %O in edit.pike\n",file1);
+//	  applaunch(file1,demo);
+        }
+      }
   }
   else
+  {
+      //write("sending command 14\n");
       conn->send_command(14, 0); 
+  }
+  o->close();
 }
 
-object conn;
+object conn,file1;
 mapping conn_options = ([]);
+object _Server,user_obj;
+array(object) gp;
 
 int main(int argc, array(string) argv)
 {
  
-  array(object) gp;
- 
+//  array(object) gp;
+//  write("came in edit\n"); 
 //  program pGroup = (program)"/classes/Group.pike";
   mapping options=init(argv);
-  object _Server=conn->SteamObj(0);
-  object file;
-  string mystr;
+  //write((string)options->port);
+  _Server=conn->SteamObj(0);
+//  string mystr;
 //  gp=_Server->get_module("groups")->lookup("helloworld");
-  object user_obj = _Server->get_module("users")->lookup(options->user); 
+  user_obj = _Server->get_module("users")->lookup(options->user); 
   gp = user_obj->get_groups();
 
 /* WORKING AND GIVING GROUP OBJECTS AND NAMES */
@@ -61,7 +89,7 @@ int main(int argc, array(string) argv)
         i=i+1;
 	}
 
-  int len = sizeof(gp);
+//  int len = sizeof(gp);
 //	 groups_pgm = ((program)"/usr/local/lib/steam/server/modules/groups.pike")();
 //   gp= _Server->get_module("groups")->lookup(1);
 /*   gp=_Server->get_module("filepath:tree")->path_to_object("/home/WikiGroups"); 
@@ -70,40 +98,61 @@ int main(int argc, array(string) argv)
 //  mystr = gp->get_group_name();
 //  write(mystr);
 // array(string) gps = ({ "Admin" , "coder" , "help" , "PrivGroups" , "WikiGroups" , "sTeam" });
-  if ((string)(int)options->file == options->file)
-    file = conn->find_object(options->file);
-  else if (options->file[0] == '/')
-    file = _Server->get_module("filepath:tree")->path_to_object(options->file);
-  else // FIXME: try to find out how to use relative paths
-  {
-   string a = options->file;
+  get_file_object();
+  //write("going to applaunch\n");
+  //write("with file : %O\n",file);
+  return applaunch(file1,demo);
+}
+string a;
+void get_file_object()
+{
+  int len = sizeof(gp);
+if ((string)(int)options->file == options->file)
+	file1 = conn->find_object(options->file);
+else if (options->file[0] == '/')
+	file1 = _Server->get_module("filepath:tree")->path_to_object(options->file);
+else // FIXME: try to find out how to use relative paths
+{
+  write("a is "+a+"\n");
+    if(a){ file1 = _Server->get_module("filepath:tree")->path_to_object(a); }
+   a = options->file;
    int tmp_len = 0;
-   while(!file && tmp_len!=(len+1)){
-//	options->file="/home/PrivGroups/"+options->file;
+   while(!file1 && tmp_len!=(len+2)){
     write("Checking in "+(string)a+"\n");
-    file = _Server->get_module("filepath:tree")->path_to_object(a);
-    string gp_name = gp[tmp_len]->get_group_name();
-//    write(gp_name[.. 10]);
-    if(gp_name[.. 10] == "WikiGroups.")
+    write("_Server is %O\n",_Server);
+    file1 = _Server->get_module("filepath:tree")->path_to_object(a);
+    write("file1 is %O\n",file1);
+    if(tmp_len<len)
     {
-	gp_name=gp_name[11 ..];
-        a = "/wiki/"+gp_name+"/"+options->file;
-    }
-    else
-    {
-   	 a="/home/"+gp_name+"/"+options->file;
+	    	string gp_name = gp[tmp_len]->get_group_name();
+	    	if(gp_name[.. 10] == "WikiGroups.")
+		{	
+			gp_name=gp_name[11 ..];
+        		a = "/wiki/"+gp_name+"/"+options->file;
+    		}
+    		else
+    		{
+   	 		a="/home/"+gp_name+"/"+options->file;
+    		}
     }
     tmp_len=tmp_len+1;
    }
-  }
-  if (file->get_class() == "Link")
-      file = file->get_link_object();
-  return applaunch(file);
 }
+if (file1->get_class() == "Link"){
+    write("inside Link\n");
+	file1 = file1->get_link_object();}
+}
+function demo(int a)
+{
+  //write("came in demo function\n");
+  return 0;
+}
+
+mapping options = ([ ]);
 
 mapping init(array argv)
 {
-  mapping options = ([ ]);
+//  mapping options = ([ ]);
 
   array opt=Getopt.find_all_options(argv,aggregate(
     ({"host",Getopt.HAS_ARG,({"-h","--host"})}),
@@ -126,7 +175,7 @@ mapping init(array argv)
 
   options->file = argv[-1];
 
-  string server_path = "/usr/local/lib/steam";
+  string server_path = "/home/trilok/Desktop/my_gsoc_work/new/sTeam";
 
   master()->add_include_path(server_path+"/server/include");
   master()->add_program_path(server_path+"/server/");
@@ -164,17 +213,19 @@ mapping init(array argv)
   {
     pw = Input.read_password( sprintf("Password for %s@%s", options->user,
            options->host), "steam" );
+//    write("entered password "+pw+"\n");
 //    pw ="steam"; 
     //pw=readln->read(sprintf("passwd for %s@%s: ", options->user, options->host));
   }
   while((err = catch(conn->login(options->user, pw, 1))) && --tries);
   //readln->set_echo( 1 );
-
+  //write("after do while\n");
   if ( err != 0 ) 
   {
     werror("Failed to log in!\nWrong Password!\n");
     exit(1);
   } 
+  //write("came before ping\n");
   ping(options->host, options->port, options->user, pw);
   return options;
 }
