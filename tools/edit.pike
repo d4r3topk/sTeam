@@ -27,13 +27,12 @@ inherit "/usr/local/lib/steam/tools/applauncher.pike";
 void ping(string host, string port, string user, string|void pw)
 {
   call_out(ping, 60, host, port, user, pw);
-  if (conn->is_closed())
+  mixed a = conn->send_command(14, 0);
+  if (a=="sTeam connection lost.")
   {
       if (conn->connect_server(host, port) && user != "guest")
           conn->login(user, pw, 1);
   }
-  else
-      conn->send_command(14, 0); 
 }
 
 object conn;
