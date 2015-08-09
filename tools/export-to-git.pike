@@ -29,23 +29,32 @@ constant cvs_version="$Id: export-to-git.pike.in,v 1.1 2010/09/28 14:19:52 marti
  
 array history = ({});
 object _Server;
- 
 void git_object(object obj, string to)
 {
     if (obj->get_object_class() & CLASS_DOCUMENT)
     {
+/*          if(options->nopath)
+            path = obj->query_attribute("OBJ_NAME");
+          else
+            path = obj->query_attribute("OBJ_PATH"); */
          mapping versions = obj->query_attribute("DOC_VERSIONS");
+        string path = obj->query_attribute("OBJ_PATH");
+        write("versions for "+path+" are "+sizeof(versions)+"\n");
+        int flag=0;
          if (!sizeof(versions))
          {
+              flag=1;
              versions = ([ 1:obj ]);
+              write("adding 1:obj\n");
          }
- 
+ // FIXME remove comment above maybe
          array this_history = ({});
          foreach(versions; int nr; object version)
          {
              this_history += ({ ([ "obj":version, "version":nr, "time":version->query_attribute("DOC_LAST_MODIFIED"), "path":obj->query_attribute("OBJ_PATH") ]) });
          }
          sort(this_history->version, this_history);
+       if(flag==0)
          this_history += ({ ([ "obj":obj, "version":this_history[-1]->version+1, "time":obj->query_attribute("DOC_LAST_MODIFIED"), "path":obj->query_attribute("OBJ_PATH") ]) });
          
          int timestamp = 0;
@@ -54,9 +63,9 @@ void git_object(object obj, string to)
          {
             string newname;
             if (version->obj->query_attribute("OBJ_VERSIONOF"))
-                newname = version->obj->query_attribute("OBJ_VERSIONOF")->query_attribute("OBJ_PATH");
+                newname = version->obj->query_attribute("OBJ_VERSIONOF")->query_attribute("OBJ_NAME");
             else
-                newname = version->obj->query_attribute("OBJ_PATH");
+                newname = version->obj->query_attribute("OBJ_NAME");
             if (oldname && oldname != newname)
             {
                 werror("rename %s -> %s\n", oldname, newname);
@@ -71,12 +80,53 @@ void git_object(object obj, string to)
          }
          history += this_history;
     }
+    //THIS IS FOR CREATING THE FOLDERS. NEED TO DISABLE IT WITH NO PATH OPTION
+    string tocreate;
+    string from = options->src;
+    if(from[-1]=='/'&&sizeof(from)!=1)
+      from = from[ ..sizeof(from)-2];
+    if(from=="/")
+      options->nopath=0;
+    if(options->nopath)
+    {
+//      tocreate = to+obj->query_attribute("OBJ_NAME");
+      write("OBJ IS %O\n",obj);
+      string temppath = obj->query_attribute("OBJ_PATH");
+      write("temppath : "+temppath+"\n");
+      string tempclass = OBJ(from)->get_class();
+      
+      if(sizeof(temppath)>0 && temppath[-1]=='/')
+        temppath = temppath[ ..sizeof(temppath)-2];
+      int s =sizeof((from/"/")-({""}));
+      if(tempclass!="Container" && tempclass!="Room")
+        s=s-1;
+      write("from is "+from+"\n"+"sizeof(from) is "+(string)s+"\n");
+      write("temppath is "+temppath+"\n");
+      array temp = (temppath/"/") - ({""});
+      write("(after operation it is "+temp[s ..]*"/" +"\n");
+      tocreate = to+"/"+(temp[s..]*"/");
+
+    }
+    else
+      tocreate = to+obj->query_attribute("OBJ_PATH"); 
+
     if (obj->get_object_class() & CLASS_CONTAINER && obj->query_attribute("OBJ_PATH") != "/home")
     {
-        mkdir(to+obj->query_attribute("OBJ_PATH"));
- 
+      string objname="";
+      string base = basename(from);
+      mixed error = catch {
+      write("obj->qquery : "+obj->query_attribute("OBJ_NAME")+"\n");
+      write("basename from : "+basename(from)+"\n");
+      objname = obj->query_attribute("OBJ_NAME");
+      };
+      if((options->nopath&&!(objname[0 .. sizeof(base)]==base))||!options->nopath)
+      {
+        mkdir(tocreate); //CHANGE changed path to name here
+        write("CREATING "+tocreate+"\n");
+      }
         foreach(obj->get_inventory();; object cont)
         {
+          if(!(obj->get_object_class() & CLASS_USER))
             git_object(cont, to);
         }
     }
@@ -84,28 +134,54 @@ void git_object(object obj, string to)
  
 void git_add(mapping doc, string to)
 {
+    string from = options->src;
     string content = doc->obj->get_content();
     if (!content)
         return;
     string actual;
+    if(to[-1]=='/')
+      to = to[ ..sizeof(to)-2];
     //Checks whether there is a / at the end of to, if yes first one writes otherwise second one writes
-    object err = catch
+    if(options->nopath)
     {
-        Stdio.write_file(to+doc->name, content);
-        actual = doc->name[1 ..];
-    };
-    if (err)
-    {
-        Stdio.write_file(to+doc->path[1 ..], content);
-        actual = doc->path;
+      string temppath = doc->path;
+      string tempclass = OBJ(from)->get_class();
+      if(temppath[-1]=='/')
+        temppath = temppath[ ..sizeof(temppath)-2];
+      int s =sizeof((from/"/")-({""}));
+      if(tempclass!="Container" && tempclass!="Room")
+        s=s-1;
+      write("from is "+from+"\n"+"sizeof(from) is "+(string)s+"\n");
+      write("temppath is "+temppath+"\n");
+      array temp = (temppath/"/") - ({""});
+      write("(after operation it is "+temp[s ..]*"/" +"\n");
+      string tocreate =to+"/"+(temp[s..]*"/");
+      write("tocreate is "+tocreate+"\n");
+        Stdio.write_file(tocreate, content); //changed doc->name from /home/coder/demo1 to demo1
+        actual = (temp[s..]*"/");  //to+"/" not needed, as git add using path as to.
+        if(actual[0]=='/')
+          actual = actual[1..];
+        write("Passed in "+tocreate+"\n");
     }
-    Process.create_process(({ "git", "add", to+actual }), ([ "cwd": to ]))->wait();
+    else
+    {
+        Stdio.write_file(to+doc->path, content);
+        actual = doc->path;
+        if(actual[0]=='/')
+          actual = actual[1..];
+        write("Passed in comp : "+to+doc->path+"\n");
+    }
+    Process.create_process(({ "git", "add", actual }), ([ "cwd": to ]))->wait();
 }
  
-string git_commit(string message, string to, string author, int time)
+string git_commit(string message, string to, string author, int time, int|void isempty)
 {
     Stdio.File output = Stdio.File();
-    int errno = Process.create_process(({ "git", "commit", "-m", message, "--author", author }), ([ "env":([ "GIT_AUTHOR_DATE":ctime(time), "GIT_COMMITTER_DATE":ctime(time) ]), "cwd":to , "stdout":output->pipe() ]))->wait();
+    int errno;
+//    if(isempty)
+      errno =  Process.create_process(({ "git", "commit", "--allow-empty", "-m", message, "--author", author }), ([ "env":([ "GIT_AUTHOR_DATE":ctime(time), "GIT_COMMITTER_DATE":ctime(time) ]), "cwd":to , "stdout":output->pipe() ]))->wait();
+//    else
+//      errno = Process.create_process(({ "git", "commit", "-m", message, "--author", author }), ([ "env":([ "GIT_AUTHOR_DATE":ctime(time), "GIT_COMMITTER_DATE":ctime(time) ]), "cwd":to , "stdout":output->pipe() ]))->wait();
     output->read();
     if (!errno)
     {
@@ -133,36 +209,65 @@ int main(int argc, array(string) argv)
     array opt = Getopt.find_all_options(argv,aggregate(
     ({"update",Getopt.NO_ARG,({"-U","--update"})}),
     ({"restart",Getopt.NO_ARG,({"-R","--restart"})}),
+    ({"nopath",Getopt.NO_ARG,({"-N","--no-path"})}),
     ));
     options += mkmapping(opt[*][0], opt[*][1]);
     options->src = argv[-2];
     options->dest = argv[-1];
     _Server=conn->SteamObj(0);
-    export_to_git(OBJ(options->src), options->dest+"/root/", ({ OBJ("/home") }));
+    export_to_git(OBJ(options->src), options->dest, ({ OBJ("/home") }));
 }
  
 int count=0;
-void dir_check(string def, string dir)
+string dir_check(string def, string dir)
 {
-   count=count+1;  
-   if(count==2)
+   if(def!="")
    {
-        array(string) new = dir/"/";   
-        foreach(new[1..] , string x)
+        int y=1;
+        array(string) new = dir/"/";
+        string oclass = OBJ(dir)->get_class();
+        if(oclass=="Container"||oclass=="Room") //if its a container/room like /sources , then last element of new doesn't get discarded. 
+            y=1;
+        else
+            y=2;      //if it is a file like /sources/file , then file gets discarded because only sourced folder needs to be created
+        foreach(new[1..sizeof(new)-y] , string x)
         {
                
                 if (!Stdio.is_dir(def+"/"+x))
                 {
+                        write("Making "+def+"/"+x+"\n");
                         mkdir(def+"/"+x);
                 }
                 def = def+"/"+x;
         }
+        if(oclass=="Container"||oclass=="Room")
+          return def;
+        return def+"/"+new[sizeof(new)-1];  //complete path to file or folder
    }
    else
    {
-        if (!Stdio.is_dir(dir))
-                mkdir(dir);
+        write("dir("", to) is "+dir+"\n");
+        array(string) arr = dir/"/";
+        if(arr[-1] == "")
+          arr = arr[0 .. sizeof(arr)-2]; //last "/" should not be counted
+        array(string) temp = arr;
+        int flag = 0;
+        int x = 0;
+        while (!Stdio.is_dir(temp*"/")) //checking what all directories need to be created
+        {
+                flag=1;
+                temp = temp[0 .. sizeof(temp)-2];
+                x = sizeof(temp);
+        }
+        while(!Stdio.is_dir(dir) && flag==1) //flag is 1 means some directories have to be created. this loop creates the directories one by one.
+        {
+          temp = temp + ({ arr[x] });
+          write("making "+(temp*"/")+"\n");
+          mkdir(temp*"/");
+          x++;
+        }
    }
+  return "";
 }
  
 void git_create_branch(string to)
@@ -170,18 +275,28 @@ void git_create_branch(string to)
     string cur_time = replace(ctime(time(0))[4 ..]-"\n",([":":"-" , " ":"-"]));
     Process.create_process(({ "git", "checkout", "--orphan", cur_time }), ([ "cwd": to ]))->wait();
     Process.create_process(({ "git", "rm", "-rf", "."}),([ "cwd": to]))->wait();
+    write("to is "+to+"*");
+//    Process.create_process(({ "rm", "-rd", to+"*" }),([ "cwd": to]))->wait();
+//    int a = Stdio.recursive_rm(to); //deletes .git folder also
+//    write("returned "+(string)a+"\n");
     dir_check("",to);
 }
     
 void export_to_git(object from, string to, void|array(object) exclude)
 {
+    string complete_path;
     git_init(to);
     git_create_branch(to);
-    dir_check(to,options->src);
+    if(!options->nopath)  // only if paths have to be created
+      complete_path = dir_check(to,options->src);
+    write("complete_path : "+complete_path+"\n");
     git_object(from, to);
+    write("Commit message : sTeam export-to-git\n");
+    git_commit("sTeam export-to-git", to, sprintf("root <root@%s>",_Server->get_server_name()), 0, 1);  //empty commit
     sort(history->time, history);
     foreach(history;; mapping doc)
-    {  
+    {   
+            write("doc is %O\n",doc);
             git_add(doc, to);
             string message = sprintf("%s - %d - %d", doc->obj->get_identifier(), doc->obj->get_object_id(), doc->version);
             write("Commit message : "+message+"\n");
